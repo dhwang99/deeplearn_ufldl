@@ -1,0 +1,127 @@
+function [cost,grad] = sparseAutoencoderCost(theta, visibleSize, hiddenSize, ...
+                                             lambda, sparsityParam, beta, data)
+
+% visibleSize: the number of input units (probably 64) 
+% hiddenSize: the number of hidden units (probably 25) 
+% lambda: weight decay parameter
+% sparsityParam: The desired average activation for the hidden units (denoted in the lecture
+%                           notes by the greek alphabet rho, which looks like a lower-case "p").
+% beta: weight of sparsity penalty term
+% data: Our 64x10000 matrix containing the training data.  So, data(:,i) is the i-th training example. 
+  
+% The input theta is a vector (because minFunc expects the parameters to be a vector). 
+% We first convert theta to the (W1, W2, b1, b2) matrix/vector format, so that this 
+% follows the notation convention of the lecture notes. 
+
+W1 = reshape(theta(1:hiddenSize*visibleSize), hiddenSize, visibleSize);
+W2 = reshape(theta(hiddenSize*visibleSize+1:2*hiddenSize*visibleSize), visibleSize, hiddenSize);
+b1 = theta(2*hiddenSize*visibleSize+1:2*hiddenSize*visibleSize+hiddenSize);
+b2 = theta(2*hiddenSize*visibleSize+hiddenSize+1:end);
+
+
+
+% Cost and gradient variables (your code needs to compute these values). 
+% Here, we initialize them to zeros. 
+cost = 0;
+W1grad = zeros(size(W1)); 
+W2grad = zeros(size(W2));
+b1grad = zeros(size(b1)); 
+b2grad = zeros(size(b2));
+
+a2 = zeros(sizeof(b1));
+a3 = zeros(sizeof(b2));
+
+ss = size(data(1,:));
+m = ss(2);
+
+b1_rep = repmat(b1, 1, m);
+b2_rep = repmat(b2, 1, m);
+
+z2 = W1 * data + b1_rep;
+a2 = 1.0 ./(1.0 + exp(-z2));
+
+z3 = W2 * a2 + b2_rep;
+a3 = 1.0 ./(1.0 + exp(-z3));
+
+dif = a3 - data;
+
+square_value = sum(sum(dif .* dif, 1), 2);
+
+%get square sum
+%square_value = sum(sum(dif' * dif, 1), 2);
+
+%get regular value
+regular_value = sum(sum(W1 .* W1, 1), 2) + sum(sum(W2 .* W2, 1), 2);
+
+%get the average activation of all neu units
+p_head = sum(a2, 2) / m;
+p = sparsityParam; % expected activation, 0.02 for common use
+%KL divergence
+kl = p*log(p ./ p_head) + (1-p) .* log((1-p) ./ (1-p_head)); % p*log(p/p_head)+(1-p)*log((1-p)/(1-p_head)) for each neu unit
+
+%get J value
+
+J = 1/(2.0 * m) * square_value + lambda/2.0 * regular_value;
+J_sparse = J + beta * sum(kl);
+cost = J_sparse;
+
+%back 
+
+delta3 = zeros(size(b2));
+delta2 = zeros(size(b1));
+
+deltap = zeros(size(b1));
+
+fprime_z3 = a3 .* (1 - a3); % f'(z) = f(z) .* (1 - f(z))
+fprime_z2 = a2 .* (1 - a2);
+delta_p = beta * (-p ./ p_head + (1-p) ./ (1-p_head));
+delta_pm = repmat(delta_p, 1, m);
+
+delta3 = dif .* fprime_z3; % d3 = (h - y) * f'
+delta2 = (W2' * delta3 + delta_pm) .* fprime_z2; % d2 = sum(wij * delta3) * f3'
+
+W2grad = delta3 * a2';
+W1grad = delta2 * data';
+
+W2grad = W2grad/m + lambda * W2;
+b2grad = sum(delta3, 2) / m;
+
+W1grad = W1grad/m + lambda * W1;
+b1grad = sum(delta2, 2) / m;
+
+
+%% ---------- YOUR CODE HERE --------------------------------------
+%  Instructions: Compute the cost/optimization objective J_sparse(W,b) for the Sparse Autoencoder,
+%                and the corresponding gradients W1grad, W2grad, b1grad, b2grad.
+%
+% W1grad, W2grad, b1grad and b2grad should be computed using backpropagation.
+% Note that W1grad has the same dimensions as W1, b1grad has the same dimensions
+% as b1, etc.  Your code should set W1grad to be the partial derivative of J_sparse(W,b) with
+% respect to W1.  I.e., W1grad(i,j) should be the partial derivative of J_sparse(W,b) 
+% with respect to the input parameter W1(i,j).  Thus, W1grad should be equal to the term 
+% [(1/m) \Delta W^{(1)} + \lambda W^{(1)}] in the last block of pseudo-code in Section 2.2 
+% of the lecture notes (and similarly for W2grad, b1grad, b2grad).
+% 
+% Stated differently, if we were using batch gradient descent to optimize the parameters,
+% the gradient descent update to W1 would be W1 := W1 - alpha * W1grad, and similarly for W2, b1, b2. 
+% 
+
+
+%-------------------------------------------------------------------
+% After computing the cost and gradient, we will convert the gradients back
+% to a vector format (suitable for minFunc).  Specifically, we will unroll
+% your gradient matrices into a vector.
+
+grad = [W1grad(:) ; W2grad(:) ; b1grad(:) ; b2grad(:)];
+
+end
+
+%-------------------------------------------------------------------
+% Here's an implementation of the sigmoid function, which you may find useful
+% in your computation of the costs and the gradients.  This inputs a (row or
+% column) vector (say (z1, z2, z3)) and returns (f(z1), f(z2), f(z3)). 
+
+function sigm = sigmoid(x)
+  
+    sigm = 1 ./ (1 + exp(-x));
+end
